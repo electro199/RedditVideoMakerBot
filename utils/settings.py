@@ -138,10 +138,6 @@ def check_toml(template_file: str, config_file: str):
     return config
 
 
-if __name__ == "__main__":
-    directory = Path().absolute()
-    check_toml(f"{directory}/utils/.config.template.toml", "config.toml")
-
 
 def get_config() -> Dict[str, Any]:
     directory = Path().absolute()
@@ -161,3 +157,7 @@ def get_config() -> Dict[str, Any]:
         )
         sys.exit()
     return config
+
+if __name__ == "__main__":
+    directory = Path().absolute()
+    check_toml(f"{directory}/utils/.config.template.toml", "config.toml")
