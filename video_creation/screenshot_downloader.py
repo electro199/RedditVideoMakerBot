@@ -13,8 +13,6 @@ from utils.imagenarator import imagemaker
 from utils.playwright import clear_cookie_by_name
 from utils.videos import save_data
 
-__all__ = ["get_screenshots_of_reddit_posts"]
-
 
 def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
     """Downloads screenshots of reddit posts as seen on the web. Downloads to assets/temp/png
@@ -64,11 +62,11 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
         return imagemaker(
             theme=bgcolor,
             reddit_obj=reddit_object,
+            size=(W,H),
             txtclr=txtcolor,
             transparent=transparent,
         )
 
-    screenshot_num: int
     with sync_playwright() as p:
         print_substep("Launching Headless Browser...")
 

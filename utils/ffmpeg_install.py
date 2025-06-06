@@ -7,9 +7,7 @@ import requests
 
 def ffmpeg_install_windows():
     try:
-        ffmpeg_url = (
-            "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build.zip"
-        )
+        ffmpeg_url = "https://github.com/GyanD/codexffmpeg/releases/download/6.0/ffmpeg-6.0-full_build.zip"
         ffmpeg_zip_filename = "ffmpeg.zip"
         ffmpeg_extracted_folder = "ffmpeg"
 
@@ -129,14 +127,19 @@ def ffmpeg_install():
             elif os.name == "mac":
                 ffmpeg_install_mac()
             else:
-                print("Your OS is not supported. Please install FFmpeg manually and try again.")
+                print(
+                    "Your OS is not supported. Please install FFmpeg manually and try again."
+                )
                 exit()
         else:
             print("Please install FFmpeg manually and try again.")
             exit()
     except Exception as e:
         print(
-            "Welcome fellow traveler! You're one of the few who have made it this far. We have no idea how you got at this error, but we're glad you're here. Please report this error to the developer, and we'll try to fix it as soon as possible. Thank you for your patience!"
+            "Welcome fellow traveler! You're one of the few who have made it this far.",
+            "We have no idea how you got at this error, but we're glad you're here.",
+            "Please report this error to the developer, and we'll try to fix it as soon as possible.",
+            "Thank you for your patience!",
         )
         print(e)
     return None

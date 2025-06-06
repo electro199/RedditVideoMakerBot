@@ -11,17 +11,18 @@ from typing import Dict, Final, Tuple
 
 import ffmpeg
 import translators
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from rich.console import Console
 from rich.progress import track
+from tqdm import tqdm
 
 from utils import settings
 from utils.cleanup import cleanup
 from utils.console import print_step, print_substep
-from utils.fonts import getheight
 from utils.id import extract_id
 from utils.thumbnail import create_thumbnail
 from utils.videos import save_data
+from video_creation.create_fancy_thumbnail import create_fancy_thumbnail
 
 console = Console()
 
@@ -80,8 +81,8 @@ def name_normalize(name: str) -> str:
         print_substep("Translating filename...")
         translated_name = translators.translate_text(name, translator="google", to_language=lang)
         return translated_name
-    else:
-        return name
+
+    return name
 
 
 def prepare_background(reddit_id: str, W: int, H: int) -> str:
@@ -94,7 +95,7 @@ def prepare_background(reddit_id: str, W: int, H: int) -> str:
             an=None,
             **{
                 "c:v": "h264_nvenc",
-                "b:v": "20M",
+                "b:v": "5M",
                 "b:a": "192k",
                 "threads": multiprocessing.cpu_count(),
             },
@@ -118,65 +119,7 @@ def get_text_height(draw, text, font, max_width):
     return total_height
 
 
-def create_fancy_thumbnail(image, text, text_color, padding, wrap=35):
-    """
-    It will take the 1px from the middle of the template and will be resized (stretched) vertically to accommodate the extra height needed for the title.
-    """
-    print_step(f"Creating fancy thumbnail for: {text}")
-    font_title_size = 47
-    font = ImageFont.truetype(os.path.join("fonts", "Roboto-Bold.ttf"), font_title_size)
-    image_width, image_height = image.size
-
-    # Calculate text height to determine new image height
-    draw = ImageDraw.Draw(image)
-    text_height = get_text_height(draw, text, font, wrap)
-    lines = textwrap.wrap(text, width=wrap)
-    # This are -50 to reduce the empty space at the bottom of the image,
-    # change it as per your requirement if needed otherwise leave it.
-    new_image_height = image_height + text_height + padding * (len(lines) - 1) - 50
-
-    # Separate the image into top, middle (1px), and bottom parts
-    top_part_height = image_height // 2
-    middle_part_height = 1  # 1px height middle section
-    bottom_part_height = image_height - top_part_height - middle_part_height
-
-    top_part = image.crop((0, 0, image_width, top_part_height))
-    middle_part = image.crop((0, top_part_height, image_width, top_part_height + middle_part_height))
-    bottom_part = image.crop((0, top_part_height + middle_part_height, image_width, image_height))
-
-    # Stretch the middle part
-    new_middle_height = new_image_height - top_part_height - bottom_part_height
-    middle_part = middle_part.resize((image_width, new_middle_height))
-
-    # Create new image with the calculated height
-    new_image = Image.new("RGBA", (image_width, new_image_height))
-
-    # Paste the top, stretched middle, and bottom parts into the new image
-    new_image.paste(top_part, (0, 0))
-    new_image.paste(middle_part, (0, top_part_height))
-    new_image.paste(bottom_part, (0, top_part_height + new_middle_height))
-
-    # Draw the title text on the new image
-    draw = ImageDraw.Draw(new_image)
-    y = top_part_height + padding
-    for line in lines:
-        draw.text((120, y), line, font=font, fill=text_color, align="left")
-        y += get_text_height(draw, line, font, wrap) + padding
-
-    # Draw the username "PlotPulse" at the specific position
-    username_font = ImageFont.truetype(os.path.join("fonts", "Roboto-Bold.ttf"), 30)
-    draw.text(
-        (205, 825),
-        settings.config["settings"]["channel_name"],
-        font=username_font,
-        fill=text_color,
-        align="left",
-    )
-
-    return new_image
-
-
-def merge_background_audio(audio: ffmpeg, reddit_id: str):
+def merge_background_audio(audio, reddit_id: str):
     """Gather an audio and merge with assets/backgrounds/background.mp3
     Args:
         audio (ffmpeg): The TTS final audio but without background.
@@ -194,6 +137,40 @@ def merge_background_audio(audio: ffmpeg, reddit_id: str):
         # Merges audio and background_audio
         merged_audio = ffmpeg.filter([audio, bg_audio], "amix", duration="longest")
         return merged_audio  # Return merged audio
+
+def make_tts_only_video(length, background_clip, audio, filename, on_update_example, defaultPath):
+    pbar = pbar = tqdm(total=100, desc="Progress: ", bar_format="{l_bar}{bar}", unit=" %")
+    path = defaultPath + f"/OnlyTTS/{filename}"
+    path = (
+            path[:251] + ".mp4"
+        )  # Prevent a error by limiting the path length, do not change this.
+    print_step("Rendering the Only TTS Video 🎥")
+    with ProgressFfmpeg(length, on_update_example) as progress:
+        try:
+            ffmpeg.output(
+                    background_clip,
+                    audio,
+                    path,
+                    f="mp4",
+                    **{
+                        "c:v": "h264_nvenc",
+                        "b:v": "20M",
+                        "b:a": "192k",
+                        "threads": multiprocessing.cpu_count(),
+                    },
+                ).overwrite_output().global_args("-progress", progress.output_file.name).run(
+                    quiet=True,
+                    overwrite_output=True,
+                    capture_stdout=False,
+                    capture_stderr=False,
+                )
+        except ffmpeg.Error as e:
+            print(e.stderr.decode("utf8"))
+            exit(1)
+
+    old_percentage = pbar.n
+    pbar.update(100 - old_percentage)
+    pbar.close()
 
 
 def make_final_video(
@@ -277,20 +254,16 @@ def make_final_video(
     # get the title_template image and draw a text in the middle part of it with the title of the thread
     title_template = Image.open("assets/title_template.png")
 
-    title = reddit_obj["thread_title"]
-
-    title = name_normalize(title)
-
-    font_color = "#000000"
-    padding = 5
+    title_path = f"assets/temp/{reddit_id}/png/title.png"
 
     # create_fancy_thumbnail(image, text, text_color, padding
-    title_img = create_fancy_thumbnail(title_template, title, font_color, padding)
+    title = name_normalize(reddit_obj["thread_title"])
+    title_img = create_fancy_thumbnail(title_template, title, "#000000", 5)
+    title_img.save(title_path)
 
-    title_img.save(f"assets/temp/{reddit_id}/png/title.png")
     image_clips.insert(
         0,
-        ffmpeg.input(f"assets/temp/{reddit_id}/png/title.png")["v"].filter(
+        ffmpeg.input(title_path)["v"].filter(
             "scale", screenshot_width, -1
         ),
     )
@@ -416,17 +389,16 @@ def make_final_video(
     )
     background_clip = background_clip.filter("scale", W, H)
     print_step("Rendering the video 🎥")
-    from tqdm import tqdm
 
     pbar = tqdm(total=100, desc="Progress: ", bar_format="{l_bar}{bar}", unit=" %")
 
-    def on_update_example(progress) -> None:
+    def on_update(progress) -> None:
         status = round(progress * 100, 2)
         old_percentage = pbar.n
         pbar.update(status - old_percentage)
 
     defaultPath = f"results/{subreddit}"
-    with ProgressFfmpeg(length, on_update_example) as progress:
+    with ProgressFfmpeg(length, on_update) as progress:
         path = defaultPath + f"/{filename}"
         path = (
             path[:251] + ".mp4"
@@ -438,8 +410,8 @@ def make_final_video(
                 path,
                 f="mp4",
                 **{
-                    "c:v": "h264_nvenc",
-                    "b:v": "20M",
+                    "c:v": "h264",
+                    "b:v": "5M",
                     "b:a": "192k",
                     "threads": multiprocessing.cpu_count(),
                 },
@@ -454,40 +426,14 @@ def make_final_video(
             exit(1)
     old_percentage = pbar.n
     pbar.update(100 - old_percentage)
-    if allowOnlyTTSFolder:
-        path = defaultPath + f"/OnlyTTS/{filename}"
-        path = (
-            path[:251] + ".mp4"
-        )  # Prevent a error by limiting the path length, do not change this.
-        print_step("Rendering the Only TTS Video 🎥")
-        with ProgressFfmpeg(length, on_update_example) as progress:
-            try:
-                ffmpeg.output(
-                    background_clip,
-                    audio,
-                    path,
-                    f="mp4",
-                    **{
-                        "c:v": "h264_nvenc",
-                        "b:v": "20M",
-                        "b:a": "192k",
-                        "threads": multiprocessing.cpu_count(),
-                    },
-                ).overwrite_output().global_args("-progress", progress.output_file.name).run(
-                    quiet=True,
-                    overwrite_output=True,
-                    capture_stdout=False,
-                    capture_stderr=False,
-                )
-            except ffmpeg.Error as e:
-                print(e.stderr.decode("utf8"))
-                exit(1)
-
-        old_percentage = pbar.n
-        pbar.update(100 - old_percentage)
     pbar.close()
+    
+    if allowOnlyTTSFolder:
+        make_tts_only_video(length, background_clip, audio, filename,  on_update, defaultPath)
+
     save_data(subreddit, filename + ".mp4", title, idx, background_config["video"][2])
     print_step("Removing temporary files 🗑")
     cleanups = cleanup(reddit_id)
     print_substep(f"Removed {cleanups} temporary files 🗑")
     print_step("Done! 🎉 The video is in the results folder 📁")
+

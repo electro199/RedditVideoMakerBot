@@ -1,13 +1,14 @@
 import os
 import shutil
 from os.path import exists
+from typing import Literal
 
 
 def _listdir(d):  # listdir with full path
     return [os.path.join(d, f) for f in os.listdir(d)]
 
 
-def cleanup(reddit_id) -> int:
+def cleanup(reddit_id) -> None | Literal[1]:
     """Deletes all temporary assets in assets/temp
 
     Returns:

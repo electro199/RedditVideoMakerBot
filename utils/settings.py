@@ -1,170 +1,163 @@
-import re
+import sys
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Dict
 
 import toml
 from rich.console import Console
 
-from utils.console import handle_input
+from utils.config_model import Config
+from utils.console import print_substep
 
 console = Console()
-config = dict  # autocomplete
+config: dict  # autocomplete
+from typing import Any
+
+from pydantic import ValidationError, BaseModel
+from pydantic_core import PydanticUndefined
 
 
-def crawl(obj: dict, func=lambda x, y: print(x, y, end="\n"), path=None):
-    if path is None:  # path Default argument value is mutable
-        path = []
-    for key in obj.keys():
-        if type(obj[key]) is dict:
-            crawl(obj[key], func, path + [key])
+def prompt_recursive(obj: BaseModel):
+    """
+    Recursively prompt for missing or invalid fields in a Pydantic model instance 'obj'.
+    """
+    for field_name, field in obj.model_fields.items():
+        value = getattr(obj, field_name, None)
+        # If field is a nested BaseModel, recurse into it
+        if hasattr(field.annotation, "model_fields"):
+            nested_obj = value or field.annotation.model_construct()
+            fixed_nested = prompt_recursive(nested_obj)
+            setattr(obj, field_name, fixed_nested)
             continue
-        func(path + [key], obj[key])
 
+        # If the value is valid and not None, skip prompt
+        if value not in [None, "", [], {}]:
+            continue
 
-def check(value, checks, name):
-    def get_check_value(key, default_result):
-        return checks[key] if key in checks else default_result
-
-    incorrect = False
-    if value == {}:
-        incorrect = True
-    if not incorrect and "type" in checks:
-        try:
-            value = eval(checks["type"])(value)  # fixme remove eval
-        except:
-            incorrect = True
-
-    if (
-        not incorrect and "options" in checks and value not in checks["options"]
-    ):  # FAILSTATE Value is not one of the options
-        incorrect = True
-    if (
-        not incorrect
-        and "regex" in checks
-        and (
-            (isinstance(value, str) and re.match(checks["regex"], value) is None)
-            or not isinstance(value, str)
+        description = field.description or ""
+        default_str = (
+            f" (default: {field.default})"
+            if (field.default is not None) or field.default == PydanticUndefined
+            else ""
         )
-    ):  # FAILSTATE Value doesn't match regex, or has regex but is not a string.
-        incorrect = True
+        prompt_msg = f"🧩 {field_name}\n   📘 {description}{default_str}\n   ⚠️ Required: {field.is_required()}\n   ❓ Enter value: "
 
-    if (
-        not incorrect
-        and not hasattr(value, "__iter__")
-        and (
-            ("nmin" in checks and checks["nmin"] is not None and value < checks["nmin"])
-            or ("nmax" in checks and checks["nmax"] is not None and value > checks["nmax"])
-        )
-    ):
-        incorrect = True
-    if (
-        not incorrect
-        and hasattr(value, "__iter__")
-        and (
-            ("nmin" in checks and checks["nmin"] is not None and len(value) < checks["nmin"])
-            or ("nmax" in checks and checks["nmax"] is not None and len(value) > checks["nmax"])
-        )
-    ):
-        incorrect = True
+        while True:
+            user_input = input(prompt_msg).strip()
+            if not user_input:
+                if field.default is not None:
+                    value_to_set = field.default
+                elif not field.required:
+                    value_to_set = None
+                else:
+                    print("⚠️ This field is required.")
+                    continue
+            else:
+                # Convert input based on type, you can expand this logic
+                try:
+                    value_to_set = parse_value(user_input, field.annotation)
+                except Exception as e:
+                    print(f"⚠️ Invalid input: {e}")
+                    continue
 
-    if incorrect:
-        value = handle_input(
-            message=(
-                (("[blue]Example: " + str(checks["example"]) + "\n") if "example" in checks else "")
-                + "[red]"
-                + ("Non-optional ", "Optional ")["optional" in checks and checks["optional"] is True]
-            )
-            + "[#C0CAF5 bold]"
-            + str(name)
-            + "[#F7768E bold]=",
-            extra_info=get_check_value("explanation", ""),
-            check_type=eval(get_check_value("type", "False")),  # fixme remove eval
-            default=get_check_value("default", NotImplemented),
-            match=get_check_value("regex", ""),
-            err_message=get_check_value("input_error", "Incorrect input"),
-            nmin=get_check_value("nmin", None),
-            nmax=get_check_value("nmax", None),
-            oob_error=get_check_value(
-                "oob_error", "Input out of bounds(Value too high/low/long/short)"
-            ),
-            options=get_check_value("options", None),
-            optional=get_check_value("optional", False),
-        )
-    return value
+            # Validate the assignment
+            try:
+                obj.__pydantic_validator__.validate_assignment(
+                    obj, field_name, value_to_set
+                )
+                setattr(obj, field_name, value_to_set)
+                break
+            except ValidationError as ve:
+                for err in ve.errors():
+                    print(f"❌ {err['loc'][0]}: {err['msg']}")
 
-
-def crawl_and_check(obj: dict, path: list, checks: dict = {}, name=""):
-    if len(path) == 0:
-        return check(obj, checks, name)
-    if path[0] not in obj.keys():
-        obj[path[0]] = {}
-    obj[path[0]] = crawl_and_check(obj[path[0]], path[1:], checks, path[0])
     return obj
 
 
-def check_vars(path, checks):
-    global config
-    crawl_and_check(config, path, checks)
+def parse_value(raw: str, expected_type: type):
+    from typing import get_args, get_origin
 
+    origin = get_origin(expected_type)
+    args = get_args(expected_type)
 
-def check_toml(template_file, config_file) -> Tuple[bool, Dict]:
-    global config
-    config = None
-    try:
-        template = toml.load(template_file)
-    except Exception as error:
-        console.print(f"[red bold]Encountered error when trying to to load {template_file}: {error}")
-        return False
-    try:
-        config = toml.load(config_file)
-    except toml.TomlDecodeError:
-        console.print(
-            f"""[blue]Couldn't read {config_file}.
-Overwrite it?(y/n)"""
-        )
-        if not input().startswith("y"):
-            print("Unable to read config, and not allowed to overwrite it. Giving up.")
+    if expected_type == bool:
+        if raw.lower() in ("true", "yes", "1"):
+            return True
+        elif raw.lower() in ("false", "no", "0"):
             return False
         else:
-            try:
-                with open(config_file, "w") as f:
-                    f.write("")
-            except:
-                console.print(
-                    f"[red bold]Failed to overwrite {config_file}. Giving up.\nSuggestion: check {config_file} permissions for the user."
-                )
-                return False
-    except FileNotFoundError:
-        console.print(
-            f"""[blue]Couldn't find {config_file}
-Creating it now."""
-        )
-        try:
-            with open(config_file, "x") as f:
-                f.write("")
-            config = {}
-        except:
-            console.print(
-                f"[red bold]Failed to write to {config_file}. Giving up.\nSuggestion: check the folder's permissions for the user."
-            )
-            return False
+            raise ValueError("Expected boolean value (true/false)")
+    elif expected_type == int:
+        return int(raw)
+    elif expected_type == float:
+        return float(raw)
+    elif expected_type == str:
+        return raw
+    elif origin == list and args:
+        return [parse_value(x.strip(), args[0]) for x in raw.split(",")]
+    else:
+        raise ValueError(f"Unsupported field type: {expected_type}")
 
-    console.print(
-        """\
-[blue bold]###############################
-#                             #
-# Checking TOML configuration #
-#                             #
-###############################
-If you see any prompts, that means that you have unset/incorrectly set variables, please input the correct values.\
-"""
-    )
-    crawl(template, check_vars)
-    with open(config_file, "w") as f:
-        toml.dump(config, f)
+
+def check_toml(template_file: str, config_file: str):
+    """
+    Load the template and config TOML files.
+    Validate config with Pydantic.
+    If invalid, prompt for missing or invalid fields.
+    Save fixed config back.
+    Return the valid Config model.
+    """
+    try:
+        config_dict = toml.load(config_file)
+    except Exception as e:
+        print(f"Failed to load config {config_file}: {e}")
+        config_dict = {}
+
+    try:
+        config_instance = Config.model_validate(config_dict)
+    except ValidationError as e:
+        print("Config validation failed, will prompt for missing/invalid fields:")
+        print(e)
+        # Start from a clean model
+        config_instance = Config.model_construct()
+        # Update model with any valid partial data loaded from config
+        for k, v in config_dict.items():
+            if hasattr(config_instance, k):
+                setattr(config_instance, k, v)
+
+        # Prompt for missing or invalid fields recursively
+        config_instance = prompt_recursive(config_instance)
+
+        # Validate again to be sure
+        config_instance = Config.model_validate(config_instance.model_dump())
+
+        # Save fixed config back to file
+        with open(config_file, "w", encoding="utf-8") as f:
+            toml.dump(config_instance.model_dump(), f)
+        print(f"Updated config saved to {config_file}")
+        config = config_instance.model_dump()
     return config
 
 
 if __name__ == "__main__":
     directory = Path().absolute()
     check_toml(f"{directory}/utils/.config.template.toml", "config.toml")
+
+
+def get_config() -> Dict[str, Any]:
+    directory = Path().absolute()
+    config = check_toml(
+        f"{directory}/utils/.config.template.toml", f"{directory}/config.toml"
+    )
+    if not config:
+        sys.exit()
+
+    if (
+        not config["settings"]["tts"]["tiktok_sessionid"]
+        or config["settings"]["tts"]["tiktok_sessionid"] == ""
+    ) and config["settings"]["tts"]["voice_choice"] == "tiktok":
+        print_substep(
+            "TikTok voice requires a sessionid! Check our documentation on how to obtain one.",
+            "bold red",
+        )
+        sys.exit()
+    return config

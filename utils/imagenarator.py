@@ -20,7 +20,9 @@ def draw_multiple_line_text(
     font_height = getheight(font, text)
     image_width, image_height = image.size
     lines = textwrap.wrap(text, width=wrap)
-    y = (image_height / 2) - (((font_height + (len(lines) * padding) / len(lines)) * len(lines)) / 2)
+    y = (image_height / 2) - (
+        ((font_height + (len(lines) * padding) / len(lines)) * len(lines)) / 2
+    )
     for line in lines:
         line_width, line_height = getsize(font, line)
         if transparent:
@@ -54,7 +56,14 @@ def draw_multiple_line_text(
         y += line_height + padding
 
 
-def imagemaker(theme, reddit_obj: dict, txtclr, padding=5, transparent=False) -> None:
+def imagemaker(
+    theme,
+    reddit_obj: dict,
+    txtclr,
+    size: tuple[int, int],
+    padding=5,
+    transparent=False,
+) -> None:
     """
     Render Images for video
     """
@@ -65,10 +74,10 @@ def imagemaker(theme, reddit_obj: dict, txtclr, padding=5, transparent=False) ->
     else:
         font = ImageFont.truetype(os.path.join("fonts", "Roboto-Regular.ttf"), 100)
 
-    size = (1920, 1080)
-
     for idx, text in track(enumerate(texts), "Rendering Image"):
         image = Image.new("RGBA", size, theme)
         text = process_text(text, False)
-        draw_multiple_line_text(image, text, font, txtclr, padding, wrap=30, transparent=transparent)
+        draw_multiple_line_text(
+            image, text, font, txtclr, padding, wrap=30, transparent=transparent
+        )
         image.save(f"assets/temp/{reddit_id}/png/img{idx}.png")
