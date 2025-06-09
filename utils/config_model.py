@@ -114,13 +114,21 @@ class SettingsTTS(BaseModel):
         ),
     ]
     elevenlabs_voice_name: Annotated[
-        Literal[
-            "Adam", "Antoni", "Arnold", "Bella", "Domi", "Elli", "Josh", "Rachel", "Sam"
-        ],
+        str,
         Field(
             default="Bella",
             description="The voice used for ElevenLabs.",
-            examples=["Bella"],
+            examples=[
+                "Adam",
+                "Antoni",
+                "Arnold",
+                "Bella",
+                "Domi",
+                "Elli",
+                "Josh",
+                "Rachel",
+                "Sam",
+            ],
         ),
     ]
     elevenlabs_api_key: Annotated[
