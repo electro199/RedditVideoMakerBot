@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -8,13 +7,13 @@ from rich.console import Console
 from utils.config_model import Config
 from utils.console import print_substep
 
-console = Console()
-config: dict  # autocomplete
-from typing import Any
+from typing import Any, get_args, get_origin
 
-from pydantic import ValidationError, BaseModel
+from pydantic import BaseModel, ValidationError
 from pydantic_core import PydanticUndefined
 
+console = Console()
+config: dict  # autocomplete
 
 def prompt_recursive(obj: BaseModel):
     """
@@ -74,7 +73,6 @@ def prompt_recursive(obj: BaseModel):
 
 
 def parse_value(raw: str, expected_type: type):
-    from typing import get_args, get_origin
 
     origin = get_origin(expected_type)
     args = get_args(expected_type)
