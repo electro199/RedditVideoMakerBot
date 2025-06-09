@@ -34,7 +34,7 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
     # ! Make sure the reddit screenshots folder exists
     Path(f"assets/temp/{reddit_id}/png").mkdir(parents=True, exist_ok=True)
 
-    # set the theme and disable non-essential cookies
+    # set the theme and turn off non-essential cookies
     if settings.config["settings"]["theme"] == "dark":
         cookie_file = open("./video_creation/data/cookie-dark-mode.json", encoding="utf-8")
         bgcolor = (33, 33, 36, 255)
@@ -60,7 +60,6 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
         transparent = False
 
     if storymode and settings.config["settings"]["storymodemethod"] == 1:
-        # for idx,item in enumerate(reddit_object["thread_post"]):
         print_substep("Generating images...")
         return imagemaker(
             theme=bgcolor,
@@ -82,11 +81,15 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
         dsf = (W // 600) + 1
 
         context = browser.new_context(
-            locale=lang or "en-us",
+            locale=lang or "en-CA,en;q=0.9",
             color_scheme="dark",
             viewport=ViewportSize(width=W, height=H),
             device_scale_factor=dsf,
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            user_agent=f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{browser.version}.0.0.0 Safari/537.36",
+            extra_http_headers={
+                "Dnt": "1",
+                "Sec-Ch-Ua": '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
+            },
         )
         cookies = json.load(cookie_file)
         cookie_file.close()
@@ -107,17 +110,12 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
 
         login_error_div = page.locator(".AnimatedForm__errorMessage").first
         if login_error_div.is_visible():
-            login_error_message = login_error_div.inner_text()
-            if login_error_message.strip() == "":
-                # The div element is empty, no error
-                pass
-            else:
-                # The div contains an error message
-                print_substep(
-                    "Your reddit credentials are incorrect! Please modify them accordingly in the config.toml file.",
-                    style="red",
-                )
-                exit()
+
+            print_substep(
+                "Your reddit credentials are incorrect! Please modify them accordingly in the config.toml file.",
+                style="red",
+            )
+            exit()
         else:
             pass
 

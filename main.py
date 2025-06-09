@@ -4,7 +4,9 @@ import sys
 from os import name
 from pathlib import Path
 from subprocess import Popen
+
 from typing import Dict, NoReturn, Optional
+
 
 from prawcore import ResponseException
 
@@ -25,7 +27,7 @@ from video_creation.final_video import make_final_video
 from video_creation.screenshot_downloader import get_screenshots_of_reddit_posts
 from video_creation.voices import save_text_to_mp3
 
-__VERSION__ = "3.3.0"
+__VERSION__ = "3.4.0"
 
 print(
     """
@@ -49,9 +51,10 @@ reddit_object: Dict[str, str | list]
 
 
 def main(POST_ID=None) -> None:
-    global redditid, reddit_object
+    global reddit_id, reddit_object
     reddit_object = get_subreddit_threads(POST_ID)
-    redditid = extract_id(reddit_object)
+    reddit_id = extract_id(reddit_object)
+    print_substep(f"Thread ID is {reddit_id}", style="bold blue")
     length, number_of_comments = save_text_to_mp3(reddit_object)
     length = math.ceil(length)
     get_screenshots_of_reddit_posts(reddit_object, number_of_comments)
@@ -70,6 +73,7 @@ def run_many(times) -> None:
         print_step(
             f"on the {format_ordinal(x)} iteration of {times}"
         )  # correct 1st 2nd 3rd 4th 5th....
+
         main()
         Popen("cls" if name == "nt" else "clear", shell=True).wait()
 
@@ -77,15 +81,17 @@ def run_many(times) -> None:
 def shutdown() -> NoReturn:
     if reddit_id is not None:
         print_markdown("## Clearing temp files")
-        cleanup(redditid)
+        cleanup(reddit_id)
 
     print("Exiting...")
     sys.exit()
 
 
 if __name__ == "__main__":
+
     check_python()
     ffmpeg_install()
+    
     directory = Path().absolute()
     config = settings.get_config(directory)
 
@@ -113,6 +119,7 @@ if __name__ == "__main__":
     except Exception as err:
         config["settings"]["tts"]["tiktok_sessionid"] = "REDACTED"
         config["settings"]["tts"]["elevenlabs_api_key"] = "REDACTED"
+        config["settings"]["tts"]["openai_api_key"] = "REDACTED"
         print_step(
             f"Sorry, something went wrong with this version! Try again, and feel free to report this issue at GitHub or the Discord community.\n"
             f"Version: {__VERSION__} \n"

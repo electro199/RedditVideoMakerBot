@@ -17,9 +17,12 @@ from rich.progress import track
 from utils import settings
 from utils.cleanup import cleanup
 from utils.console import print_step, print_substep
+
+from utils.fonts import getheight
+from utils.id import extract_id
+from utils.thumbnail import create_thumbnail
 from utils.videos import save_data
-from video_creation.thumbnail import background_thumbnail
-from .thumbnail import create_fancy_thumbnail
+from video_creation.thumbnail import background_thumbnail, create_fancy_thumbnail
 
 console = Console()
 
@@ -91,7 +94,7 @@ def prepare_background(reddit_id: str, W: int, H: int) -> str:
             output_path,
             an=None,
             **{
-                "c:v": "h264",
+                "c:v": "h264_nvenc",
                 "b:v": "20M",
                 "b:a": "192k",
                 "threads": multiprocessing.cpu_count(),
@@ -105,6 +108,7 @@ def prepare_background(reddit_id: str, W: int, H: int) -> str:
         print(e.stderr.decode("utf8"))
         exit(1)
     return output_path
+
 
 
 def merge_background_audio(audio: ffmpeg, reddit_id: str):
@@ -146,7 +150,7 @@ def make_final_video(
 
     opacity = settings.config["settings"]["opacity"]
 
-    reddit_id = re.sub(r"[^\w\s-]", "", reddit_obj["thread_id"])
+    reddit_id = extract_id(reddit_obj)
 
     allowOnlyTTSFolder: bool = (
         settings.config["settings"]["background"]["enable_extra_audio"]
@@ -280,8 +284,8 @@ def make_final_video(
             )
             current_time += audio_clips_durations[i]
 
-    title = re.sub(r"[^\w\s-]", "", reddit_obj["thread_title"])
-    idx = re.sub(r"[^\w\s-]", "", reddit_obj["thread_id"])
+    title = extract_id(reddit_obj, "thread_title")
+    idx = extract_id(reddit_obj)
     title_thumb = reddit_obj["thread_title"]
 
     filename = f"{name_normalize(title)[:251]}"
@@ -335,7 +339,7 @@ def make_final_video(
                 path,
                 f="mp4",
                 **{
-                    "c:v": "h264",
+                    "c:v": "h264_nvenc",
                     "b:v": "20M",
                     "b:a": "192k",
                     "threads": multiprocessing.cpu_count(),
@@ -365,7 +369,7 @@ def make_final_video(
                     path,
                     f="mp4",
                     **{
-                        "c:v": "h264",
+                        "c:v": "h264_nvenc",
                         "b:v": "20M",
                         "b:a": "192k",
                         "threads": multiprocessing.cpu_count(),
