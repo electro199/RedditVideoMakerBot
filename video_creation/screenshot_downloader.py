@@ -66,6 +66,7 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
             theme=bgcolor,
             reddit_obj=reddit_object,
             txtclr=txtcolor,
+            size=(W,H),
             transparent=transparent,
         )
 
