@@ -1,7 +1,6 @@
 import re
-from pathlib import Path
 import sys
-from typing import Any, Dict, Literal, Tuple
+from typing import Any, Dict, Literal
 
 import toml
 from rich.console import Console
@@ -185,6 +184,7 @@ If you see any prompts, that means that you have unset/incorrectly set variables
         toml.dump(config, f)
     return config
 
+
 def get_config(directory):
     config = check_toml(
         f"{directory}/utils/.config.template.toml", f"{directory}/config.toml"
@@ -203,8 +203,3 @@ def get_config(directory):
         sys.exit()
 
     return config
-
-
-if __name__ == "__main__":
-    directory = Path().absolute()
-    check_toml(f"{directory}/utils/.config.template.toml", "config.toml")
