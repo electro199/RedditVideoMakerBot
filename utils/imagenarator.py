@@ -7,6 +7,7 @@ from rich.progress import track
 
 from TTS.engine_wrapper import process_text
 from utils.fonts import getheight, getsize
+from utils.id import extract_id
 
 
 def draw_multiple_line_text(
@@ -62,18 +63,18 @@ def imagemaker(
     Render Images for video
     """
     texts = reddit_obj["thread_post"]
-    id = re.sub(r"[^\w\s-]", "", reddit_obj["thread_id"])
-
+    reddit_id = extract_id(reddit_obj)
     if transparent:
         font = ImageFont.truetype(os.path.join("fonts", "Roboto-Bold.ttf"), 100)
     else:
         font = ImageFont.truetype(os.path.join("fonts", "Roboto-Regular.ttf"), 100)
 
-    image = Image.new("RGBA", size, theme)
+    size = (1920, 1080)
 
     for idx, text in track(enumerate(texts), "Rendering Image"):
         image = Image.new("RGBA", size, theme)
         text = process_text(text, False)
+
         draw_multiple_line_text(
             image, text, font, txtclr, padding, wrap=30, transparent=transparent
         )

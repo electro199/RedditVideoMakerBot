@@ -4,17 +4,19 @@ import sys
 from os import name
 from pathlib import Path
 from subprocess import Popen
-from typing import NoReturn
+
+from typing import Dict, NoReturn, Optional
+
 
 from prawcore import ResponseException
 
 from reddit.subreddit import get_subreddit_threads
 from utils import settings
 from utils.cleanup import cleanup
-from utils.console import print_markdown, print_step, print_substep
+from utils.console import print_markdown, print_step, format_ordinal
 from utils.ffmpeg_install import ffmpeg_install
-from utils.id import id
-from utils.version import checkversion
+from utils.id import extract_id
+from utils.version import checkversion, check_python
 from video_creation.background import (
     chop_background,
     download_background_audio,
@@ -25,7 +27,7 @@ from video_creation.final_video import make_final_video
 from video_creation.screenshot_downloader import get_screenshots_of_reddit_posts
 from video_creation.voices import save_text_to_mp3
 
-__VERSION__ = "3.3.0"
+__VERSION__ = "3.4.0"
 
 print(
     """
@@ -38,15 +40,21 @@ print(
 """
 )
 print_markdown(
-    "### Thanks for using this tool! Feel free to contribute to this project on GitHub! If you have any questions, feel free to join my Discord server or submit a GitHub issue. You can find solutions to many common problems in the documentation: https://reddit-video-maker-bot.netlify.app/"
+    "### Thanks for using this tool! Feel free to contribute to this project on GitHub! If you have any questions,"
+    " feel free to join my Discord server or submit a GitHub issue."
+    " You can find solutions to many common problems in the documentation: https://reddit-video-maker-bot.netlify.app/"
 )
 checkversion(__VERSION__)
 
+reddit_id: Optional[str] = None
+reddit_object: Dict[str, str | list]
+
 
 def main(POST_ID=None) -> None:
-    global redditid, reddit_object
+    global reddit_id, reddit_object
     reddit_object = get_subreddit_threads(POST_ID)
-    redditid = id(reddit_object)
+    reddit_id = extract_id(reddit_object)
+    print_substep(f"Thread ID is {reddit_id}", style="bold blue")
     length, number_of_comments = save_text_to_mp3(reddit_object)
     length = math.ceil(length)
     get_screenshots_of_reddit_posts(reddit_object, number_of_comments)
@@ -63,49 +71,38 @@ def main(POST_ID=None) -> None:
 def run_many(times) -> None:
     for x in range(1, times + 1):
         print_step(
-            f'on the {x}{("th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th")[x % 10]} iteration of {times}'
+            f"on the {format_ordinal(x)} iteration of {times}"
         )  # correct 1st 2nd 3rd 4th 5th....
+
         main()
         Popen("cls" if name == "nt" else "clear", shell=True).wait()
 
 
 def shutdown() -> NoReturn:
-    if "redditid" in globals():
+    if reddit_id is not None:
         print_markdown("## Clearing temp files")
-        cleanup(redditid)
+        cleanup(reddit_id)
 
     print("Exiting...")
     sys.exit()
 
 
 if __name__ == "__main__":
-    if sys.version_info.major != 3 or sys.version_info.minor not in [10, 11]:
-        print(
-            "Hey! Congratulations, you've made it so far (which is pretty rare with no Python 3.10). Unfortunately, this program only works on Python 3.10. Please install Python 3.10 and try again."
-        )
-        sys.exit()
-    ffmpeg_install()
-    directory = Path().absolute()
-    config = settings.check_toml(
-        f"{directory}/utils/.config.template.toml", f"{directory}/config.toml"
-    )
-    config is False and sys.exit()
 
-    if (
-        not settings.config["settings"]["tts"]["tiktok_sessionid"]
-        or settings.config["settings"]["tts"]["tiktok_sessionid"] == ""
-    ) and config["settings"]["tts"]["voice_choice"] == "tiktok":
-        print_substep(
-            "TikTok voice requires a sessionid! Check our documentation on how to obtain one.",
-            "bold red",
-        )
-        sys.exit()
+    check_python()
+    ffmpeg_install()
+    
+    directory = Path().absolute()
+    config = settings.get_config(directory)
+
     try:
         if config["reddit"]["thread"]["post_id"]:
-            for index, post_id in enumerate(config["reddit"]["thread"]["post_id"].split("+")):
+            for index, post_id in enumerate(
+                config["reddit"]["thread"]["post_id"].split("+")
+            ):
                 index += 1
                 print_step(
-                    f'on the {index}{("st" if index % 10 == 1 else ("nd" if index % 10 == 2 else ("rd" if index % 10 == 3 else "th")))} post of {len(config["reddit"]["thread"]["post_id"].split("+"))}'
+                    f'on the {format_ordinal(index)} post of {len(config["reddit"]["thread"]["post_id"].split("+"))}'
                 )
                 main(post_id)
                 Popen("cls" if name == "nt" else "clear", shell=True).wait()
@@ -122,6 +119,7 @@ if __name__ == "__main__":
     except Exception as err:
         config["settings"]["tts"]["tiktok_sessionid"] = "REDACTED"
         config["settings"]["tts"]["elevenlabs_api_key"] = "REDACTED"
+        config["settings"]["tts"]["openai_api_key"] = "REDACTED"
         print_step(
             f"Sorry, something went wrong with this version! Try again, and feel free to report this issue at GitHub or the Discord community.\n"
             f"Version: {__VERSION__} \n"

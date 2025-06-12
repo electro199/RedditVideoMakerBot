@@ -5,9 +5,9 @@ from typing import Tuple
 
 import numpy as np
 import translators
+from moviepy import AudioFileClip
 from moviepy.audio.AudioClip import AudioClip
-from moviepy.audio.fx.volumex import volumex
-from moviepy.editor import AudioFileClip
+from moviepy.audio.fx import MultiplyVolume
 from rich.progress import track
 
 from utils import settings
@@ -112,7 +112,6 @@ class TTSEngine:
         ]
         self.create_silence_mp3()
 
-        idy = None
         for idy, text_cut in enumerate(split_text):
             newtext = process_text(text_cut)
             # print(f"{idx}-{idy}: {newtext}\n")
@@ -144,11 +143,18 @@ class TTSEngine:
             print("OSError")
 
     def call_tts(self, filename: str, text: str):
-        self.tts_module.run(
-            text,
-            filepath=f"{self.path}/{filename}.mp3",
-            random_voice=settings.config["settings"]["tts"]["random_voice"],
-        )
+        if settings.config["settings"]["tts"]["voice_choice"] == "googletranslate":
+            # GTTS does not have the argument 'random_voice'
+            self.tts_module.run(
+                text,
+                filepath=f"{self.path}/{filename}.mp3",
+            )
+        else:
+            self.tts_module.run(
+                text,
+                filepath=f"{self.path}/{filename}.mp3",
+                random_voice=settings.config["settings"]["tts"]["random_voice"],
+            )
         # try:
         #     self.length += MP3(f"{self.path}/{filename}.mp3").info.length
         # except (MutagenError, HeaderNotFoundError):
@@ -164,12 +170,12 @@ class TTSEngine:
     def create_silence_mp3(self):
         silence_duration = settings.config["settings"]["tts"]["silence_duration"]
         silence = AudioClip(
-            make_frame=lambda t: np.sin(440 * 2 * np.pi * t),
+            frame_function=lambda t: np.sin(440 * 2 * np.pi * t),
             duration=silence_duration,
             fps=44100,
         )
-        silence = volumex(silence, 0)
-        silence.write_audiofile(f"{self.path}/silence.mp3", fps=44100, verbose=False, logger=None)
+        silence = silence.with_effects([MultiplyVolume(0)])
+        silence.write_audiofile(f"{self.path}/silence.mp3", fps=44100, logger=None)
 
 
 def process_text(text: str, clean: bool = True):

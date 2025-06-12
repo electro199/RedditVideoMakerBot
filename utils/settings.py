@@ -1,11 +1,11 @@
 import re
-from pathlib import Path
-from typing import Dict, Tuple
+import sys
+from typing import Any, Dict, Literal
 
 import toml
 from rich.console import Console
 
-from utils.console import handle_input
+from utils.console import handle_input, print_substep
 
 console = Console()
 config = dict  # autocomplete
@@ -30,7 +30,7 @@ def check(value, checks, name):
         incorrect = True
     if not incorrect and "type" in checks:
         try:
-            value = eval(checks["type"])(value)
+            value = eval(checks["type"])(value)  # fixme remove eval
         except:
             incorrect = True
 
@@ -53,7 +53,11 @@ def check(value, checks, name):
         and not hasattr(value, "__iter__")
         and (
             ("nmin" in checks and checks["nmin"] is not None and value < checks["nmin"])
-            or ("nmax" in checks and checks["nmax"] is not None and value > checks["nmax"])
+            or (
+                "nmax" in checks
+                and checks["nmax"] is not None
+                and value > checks["nmax"]
+            )
         )
     ):
         incorrect = True
@@ -61,8 +65,16 @@ def check(value, checks, name):
         not incorrect
         and hasattr(value, "__iter__")
         and (
-            ("nmin" in checks and checks["nmin"] is not None and len(value) < checks["nmin"])
-            or ("nmax" in checks and checks["nmax"] is not None and len(value) > checks["nmax"])
+            (
+                "nmin" in checks
+                and checks["nmin"] is not None
+                and len(value) < checks["nmin"]
+            )
+            or (
+                "nmax" in checks
+                and checks["nmax"] is not None
+                and len(value) > checks["nmax"]
+            )
         )
     ):
         incorrect = True
@@ -70,15 +82,21 @@ def check(value, checks, name):
     if incorrect:
         value = handle_input(
             message=(
-                (("[blue]Example: " + str(checks["example"]) + "\n") if "example" in checks else "")
+                (
+                    ("[blue]Example: " + str(checks["example"]) + "\n")
+                    if "example" in checks
+                    else ""
+                )
                 + "[red]"
-                + ("Non-optional ", "Optional ")["optional" in checks and checks["optional"] is True]
+                + ("Non-optional ", "Optional ")[
+                    "optional" in checks and checks["optional"] is True
+                ]
             )
             + "[#C0CAF5 bold]"
             + str(name)
             + "[#F7768E bold]=",
             extra_info=get_check_value("explanation", ""),
-            check_type=eval(get_check_value("type", "False")),
+            check_type=eval(get_check_value("type", "False")),  # fixme remove eval
             default=get_check_value("default", NotImplemented),
             match=get_check_value("regex", ""),
             err_message=get_check_value("input_error", "Incorrect input"),
@@ -107,13 +125,15 @@ def check_vars(path, checks):
     crawl_and_check(config, path, checks)
 
 
-def check_toml(template_file, config_file) -> Tuple[bool, Dict]:
+def check_toml(template_file, config_file) -> Dict[str, Any] | None | Literal[False]:
     global config
     config = None
     try:
         template = toml.load(template_file)
     except Exception as error:
-        console.print(f"[red bold]Encountered error when trying to to load {template_file}: {error}")
+        console.print(
+            f"[red bold]Encountered error when trying to to load {template_file}: {error}"
+        )
         return False
     try:
         config = toml.load(config_file)
@@ -165,6 +185,21 @@ If you see any prompts, that means that you have unset/incorrectly set variables
     return config
 
 
-if __name__ == "__main__":
-    directory = Path().absolute()
-    check_toml(f"{directory}/utils/.config.template.toml", "config.toml")
+def get_config(directory):
+    config = check_toml(
+        f"{directory}/utils/.config.template.toml", f"{directory}/config.toml"
+    )
+    if not config:
+        sys.exit()
+
+    if (
+        not config["settings"]["tts"]["tiktok_sessionid"]
+        or config["settings"]["tts"]["tiktok_sessionid"] == ""
+    ) and config["settings"]["tts"]["voice_choice"] == "tiktok":
+        print_substep(
+            "TikTok voice requires a sessionid! Check our documentation on how to obtain one.",
+            "bold red",
+        )
+        sys.exit()
+
+    return config

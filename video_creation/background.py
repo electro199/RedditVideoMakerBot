@@ -6,7 +6,7 @@ from random import randrange
 from typing import Any, Dict, Tuple
 
 import yt_dlp
-from moviepy.editor import AudioFileClip, VideoFileClip
+from moviepy import AudioFileClip, VideoFileClip
 from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 
 from utils import settings
@@ -14,26 +14,26 @@ from utils.console import print_step, print_substep
 
 
 def load_background_options():
-    background_options = {}
+    _background_options = {}
     # Load background videos
     with open("./utils/background_videos.json") as json_file:
-        background_options["video"] = json.load(json_file)
+        _background_options["video"] = json.load(json_file)
 
     # Load background audios
     with open("./utils/background_audios.json") as json_file:
-        background_options["audio"] = json.load(json_file)
+        _background_options["audio"] = json.load(json_file)
 
     # Remove "__comment" from backgrounds
-    del background_options["video"]["__comment"]
-    del background_options["audio"]["__comment"]
+    del _background_options["video"]["__comment"]
+    del _background_options["audio"]["__comment"]
 
-    for name in list(background_options["video"].keys()):
-        pos = background_options["video"][name][3]
+    for name in list(_background_options["video"].keys()):
+        pos = _background_options["video"][name][3]
 
         if pos != "center":
-            background_options["video"][name][3] = lambda t: ("center", pos + t)
+            _background_options["video"][name][3] = lambda t: ("center", pos + t)
 
-    return background_options
+    return _background_options
 
 
 def get_start_and_end_times(video_length: int, length_of_clip: int) -> Tuple[int, int]:
@@ -124,10 +124,11 @@ def chop_background(background_config: Dict[str, Tuple], video_length: int, redd
     """Generates the background audio and footage to be used in the video and writes it to assets/temp/background.mp3 and assets/temp/background.mp4
 
     Args:
+        reddit_object (Dict[str,str]) : Reddit object
         background_config (Dict[str,Tuple]]) : Current background configuration
         video_length (int): Length of the clip where the background footage is to be taken out of
     """
-    id = re.sub(r"[^\w\s-]", "", reddit_object["thread_id"])
+    thread_id = re.sub(r"[^\w\s-]", "", reddit_object["thread_id"])
 
     if settings.config["settings"]["background"][f"background_audio_volume"] == 0:
         print_step("Volume was set to 0. Skipping background audio creation . . .")
@@ -138,8 +139,8 @@ def chop_background(background_config: Dict[str, Tuple], video_length: int, redd
         start_time_audio, end_time_audio = get_start_and_end_times(
             video_length, background_audio.duration
         )
-        background_audio = background_audio.subclip(start_time_audio, end_time_audio)
-        background_audio.write_audiofile(f"assets/temp/{id}/background.mp3")
+        background_audio = background_audio.subclipped(start_time_audio, end_time_audio)
+        background_audio.write_audiofile(f"assets/temp/{thread_id}/background.mp3")
 
     print_step("Finding a spot in the backgrounds video to chop...✂️")
     video_choice = f"{background_config['video'][2]}-{background_config['video'][1]}"
@@ -149,17 +150,18 @@ def chop_background(background_config: Dict[str, Tuple], video_length: int, redd
     )
     # Extract video subclip
     try:
+        with VideoFileClip(f"assets/backgrounds/video/{video_choice}") as video:
+            new = video.subclipped(start_time_video, end_time_video)
+            new.write_videofile(f"assets/temp/{thread_id}/background.mp4")
+
+    except (OSError, IOError):  # ffmpeg issue see #348
+        print_substep("FFMPEG issue. Trying again...")
         ffmpeg_extract_subclip(
             f"assets/backgrounds/video/{video_choice}",
             start_time_video,
             end_time_video,
-            targetname=f"assets/temp/{id}/background.mp4",
+            outputfile=f"assets/temp/{thread_id}/background.mp4",
         )
-    except (OSError, IOError):  # ffmpeg issue see #348
-        print_substep("FFMPEG issue. Trying again...")
-        with VideoFileClip(f"assets/backgrounds/video/{video_choice}") as video:
-            new = video.subclip(start_time_video, end_time_video)
-            new.write_videofile(f"assets/temp/{id}/background.mp4")
     print_substep("Background video chopped successfully!", style="bold green")
     return background_config["video"][2]
 

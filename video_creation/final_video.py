@@ -2,7 +2,6 @@ import multiprocessing
 import os
 import re
 import tempfile
-import textwrap
 import threading
 import time
 from os.path import exists  # Needs to be imported specifically
@@ -11,16 +10,19 @@ from typing import Dict, Final, Tuple
 
 import ffmpeg
 import translators
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from rich.console import Console
 from rich.progress import track
 
 from utils import settings
 from utils.cleanup import cleanup
 from utils.console import print_step, print_substep
+
 from utils.fonts import getheight
+from utils.id import extract_id
 from utils.thumbnail import create_thumbnail
 from utils.videos import save_data
+from video_creation.thumbnail import background_thumbnail, create_fancy_thumbnail
 
 console = Console()
 
@@ -92,7 +94,7 @@ def prepare_background(reddit_id: str, W: int, H: int) -> str:
             output_path,
             an=None,
             **{
-                "c:v": "h264",
+                "c:v": "h264_nvenc",
                 "b:v": "20M",
                 "b:a": "192k",
                 "threads": multiprocessing.cpu_count(),
@@ -107,62 +109,6 @@ def prepare_background(reddit_id: str, W: int, H: int) -> str:
         exit(1)
     return output_path
 
-
-def create_fancy_thumbnail(image, text, text_color, padding, wrap=35):
-    print_step(f"Creating fancy thumbnail for: {text}")
-    font_title_size = 47
-    font = ImageFont.truetype(os.path.join("fonts", "Roboto-Bold.ttf"), font_title_size)
-    image_width, image_height = image.size
-    lines = textwrap.wrap(text, width=wrap)
-    y = (
-        (image_height / 2)
-        - (((getheight(font, text) + (len(lines) * padding) / len(lines)) * len(lines)) / 2)
-        + 30
-    )
-    draw = ImageDraw.Draw(image)
-
-    username_font = ImageFont.truetype(os.path.join("fonts", "Roboto-Bold.ttf"), 30)
-    draw.text(
-        (205, 825),
-        settings.config["settings"]["channel_name"],
-        font=username_font,
-        fill=text_color,
-        align="left",
-    )
-
-    if len(lines) == 3:
-        lines = textwrap.wrap(text, width=wrap + 10)
-        font_title_size = 40
-        font = ImageFont.truetype(os.path.join("fonts", "Roboto-Bold.ttf"), font_title_size)
-        y = (
-            (image_height / 2)
-            - (((getheight(font, text) + (len(lines) * padding) / len(lines)) * len(lines)) / 2)
-            + 35
-        )
-    elif len(lines) == 4:
-        lines = textwrap.wrap(text, width=wrap + 10)
-        font_title_size = 35
-        font = ImageFont.truetype(os.path.join("fonts", "Roboto-Bold.ttf"), font_title_size)
-        y = (
-            (image_height / 2)
-            - (((getheight(font, text) + (len(lines) * padding) / len(lines)) * len(lines)) / 2)
-            + 40
-        )
-    elif len(lines) > 4:
-        lines = textwrap.wrap(text, width=wrap + 10)
-        font_title_size = 30
-        font = ImageFont.truetype(os.path.join("fonts", "Roboto-Bold.ttf"), font_title_size)
-        y = (
-            (image_height / 2)
-            - (((getheight(font, text) + (len(lines) * padding) / len(lines)) * len(lines)) / 2)
-            + 30
-        )
-
-    for line in lines:
-        draw.text((120, y), line, font=font, fill=text_color, align="left")
-        y += getheight(font, line) + padding
-
-    return image
 
 
 def merge_background_audio(audio: ffmpeg, reddit_id: str):
@@ -204,7 +150,7 @@ def make_final_video(
 
     opacity = settings.config["settings"]["opacity"]
 
-    reddit_id = re.sub(r"[^\w\s-]", "", reddit_obj["thread_id"])
+    reddit_id = extract_id(reddit_obj)
 
     allowOnlyTTSFolder: bool = (
         settings.config["settings"]["background"]["enable_extra_audio"]
@@ -266,17 +212,12 @@ def make_final_video(
     # get the title_template image and draw a text in the middle part of it with the title of the thread
     title_template = Image.open("assets/title_template.png")
 
-    title = reddit_obj["thread_title"]
-
-    title = name_normalize(title)
-
+    title = name_normalize(reddit_obj["thread_title"])
     font_color = "#000000"
     padding = 5
-
-    # create_fancy_thumbnail(image, text, text_color, padding
     title_img = create_fancy_thumbnail(title_template, title, font_color, padding)
-
     title_img.save(f"assets/temp/{reddit_id}/png/title.png")
+
     image_clips.insert(
         0,
         ffmpeg.input(f"assets/temp/{reddit_id}/png/title.png")["v"].filter(
@@ -343,8 +284,8 @@ def make_final_video(
             )
             current_time += audio_clips_durations[i]
 
-    title = re.sub(r"[^\w\s-]", "", reddit_obj["thread_title"])
-    idx = re.sub(r"[^\w\s-]", "", reddit_obj["thread_id"])
+    title = extract_id(reddit_obj, "thread_title")
+    idx = extract_id(reddit_obj)
     title_thumb = reddit_obj["thread_title"]
 
     filename = f"{name_normalize(title)[:251]}"
@@ -362,36 +303,7 @@ def make_final_video(
     settingsbackground = settings.config["settings"]["background"]
 
     if settingsbackground["background_thumbnail"]:
-        if not exists(f"./results/{subreddit}/thumbnails"):
-            print_substep(
-                "The 'results/thumbnails' folder could not be found so it was automatically created."
-            )
-            os.makedirs(f"./results/{subreddit}/thumbnails")
-        # get the first file with the .png extension from assets/backgrounds and use it as a background for the thumbnail
-        first_image = next(
-            (file for file in os.listdir("assets/backgrounds") if file.endswith(".png")),
-            None,
-        )
-        if first_image is None:
-            print_substep("No png files found in assets/backgrounds", "red")
-
-        else:
-            font_family = settingsbackground["background_thumbnail_font_family"]
-            font_size = settingsbackground["background_thumbnail_font_size"]
-            font_color = settingsbackground["background_thumbnail_font_color"]
-            thumbnail = Image.open(f"assets/backgrounds/{first_image}")
-            width, height = thumbnail.size
-            thumbnailSave = create_thumbnail(
-                thumbnail,
-                font_family,
-                font_size,
-                font_color,
-                width,
-                height,
-                title_thumb,
-            )
-            thumbnailSave.save(f"./assets/temp/{reddit_id}/thumbnail.png")
-            print_substep(f"Thumbnail - Building Thumbnail in assets/temp/{reddit_id}/thumbnail.png")
+        background_thumbnail(reddit_id, title_thumb, subreddit)
 
     text = f"Background by {background_config['video'][2]}"
     background_clip = ffmpeg.drawtext(
@@ -427,7 +339,7 @@ def make_final_video(
                 path,
                 f="mp4",
                 **{
-                    "c:v": "h264",
+                    "c:v": "h264_nvenc",
                     "b:v": "20M",
                     "b:a": "192k",
                     "threads": multiprocessing.cpu_count(),
@@ -457,7 +369,7 @@ def make_final_video(
                     path,
                     f="mp4",
                     **{
-                        "c:v": "h264",
+                        "c:v": "h264_nvenc",
                         "b:v": "20M",
                         "b:a": "192k",
                         "threads": multiprocessing.cpu_count(),

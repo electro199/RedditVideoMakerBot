@@ -102,7 +102,7 @@ def handle_input(
         user_input = input("").strip()
         if check_type is not False:
             try:
-                isinstance(eval(user_input), check_type)
+                isinstance(eval(user_input), check_type)  # fixme: remove eval
                 return check_type(user_input)
             except:
                 console.print(
@@ -118,3 +118,15 @@ def handle_input(
         console.print(
             "[red bold]" + err_message + "\nValid options are: " + ", ".join(map(str, options)) + "."
         )
+        
+def format_ordinal(x):
+    if 10 <= x % 100 <= 20:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(x % 10, 'th')
+    return f"{x}{suffix}"
+
+
+if __name__ == "__main__":
+    for i in range(20):
+        print(format_ordinal(i))
