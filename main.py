@@ -1,10 +1,7 @@
 #!/usr/bin/env python
 import math
 import sys
-from os import name
 from pathlib import Path
-from subprocess import Popen
-
 from typing import Dict, NoReturn, Optional
 
 
@@ -13,7 +10,7 @@ from prawcore import ResponseException
 from reddit.subreddit import get_subreddit_threads
 from utils import settings
 from utils.cleanup import cleanup
-from utils.console import print_markdown, print_step, format_ordinal
+from utils.console import clear_console, print_markdown, print_step, format_ordinal, print_substep
 from utils.ffmpeg_install import ffmpeg_install
 from utils.id import extract_id
 from utils.version import checkversion, check_python
@@ -50,7 +47,7 @@ reddit_id: Optional[str] = None
 reddit_object: Dict[str, str | list]
 
 
-def main(POST_ID=None) -> None:
+def make_video(POST_ID=None) -> None:
     global reddit_id, reddit_object
     reddit_object = get_subreddit_threads(POST_ID)
     reddit_id = extract_id(reddit_object)
@@ -74,8 +71,8 @@ def run_many(times) -> None:
             f"on the {format_ordinal(x)} iteration of {times}"
         )  # correct 1st 2nd 3rd 4th 5th....
 
-        main()
-        Popen("cls" if name == "nt" else "clear", shell=True).wait()
+        make_video()
+        clear_console()
 
 
 def shutdown() -> NoReturn:
@@ -87,29 +84,23 @@ def shutdown() -> NoReturn:
     sys.exit()
 
 
-if __name__ == "__main__":
-
-    check_python()
-    ffmpeg_install()
-    
-    directory = Path().absolute()
-    config = settings.get_config(directory)
-
+def main(config):
     try:
-        if config["reddit"]["thread"]["post_id"]:
+        post_ids = config["reddit"]["thread"]["post_id"]
+        if post_ids:
             for index, post_id in enumerate(
-                config["reddit"]["thread"]["post_id"].split("+")
+                post_ids.split("+")
             ):
                 index += 1
                 print_step(
-                    f'on the {format_ordinal(index)} post of {len(config["reddit"]["thread"]["post_id"].split("+"))}'
+                    f'on the {format_ordinal(index)} post of {len(post_ids.split("+"))}'
                 )
-                main(post_id)
-                Popen("cls" if name == "nt" else "clear", shell=True).wait()
+                make_video(post_id)
+                clear_console()
         elif config["settings"]["times_to_run"]:
             run_many(config["settings"]["times_to_run"])
         else:
-            main()
+            make_video()
     except KeyboardInterrupt:
         shutdown()
     except ResponseException:
@@ -127,3 +118,14 @@ if __name__ == "__main__":
             f'Config: {config["settings"]}'
         )
         raise err
+
+if __name__ == "__main__":
+
+    check_python()
+    ffmpeg_install()
+    
+    directory = Path().absolute().joinpath("config.toml")
+    config = settings.get_config(str(directory))
+    
+
+    main(config)
