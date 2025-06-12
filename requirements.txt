@@ -1,7 +1,7 @@
 boto3==1.36.8
 botocore==1.36.8
 gTTS==2.5.4
-moviepy==2.1.2
+moviepy==2.2.1
 playwright==1.49.1
 praw==7.8.1
 requests==2.32.3
