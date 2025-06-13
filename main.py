@@ -4,7 +4,7 @@ import sys
 from os import name
 from pathlib import Path
 from subprocess import Popen
-from typing import NoReturn
+from typing import Dict, NoReturn
 
 from prawcore import ResponseException
 
@@ -13,7 +13,7 @@ from utils import settings
 from utils.cleanup import cleanup
 from utils.console import print_markdown, print_step, print_substep
 from utils.ffmpeg_install import ffmpeg_install
-from utils.id import id
+from utils.id import extract_id
 from utils.version import checkversion
 from video_creation.background import (
     chop_background,
@@ -25,7 +25,7 @@ from video_creation.final_video import make_final_video
 from video_creation.screenshot_downloader import get_screenshots_of_reddit_posts
 from video_creation.voices import save_text_to_mp3
 
-__VERSION__ = "3.3.0"
+__VERSION__ = "3.4.0"
 
 print(
     """
@@ -42,11 +42,15 @@ print_markdown(
 )
 checkversion(__VERSION__)
 
+reddit_id: str
+reddit_object: Dict[str, str | list]
+
 
 def main(POST_ID=None) -> None:
-    global redditid, reddit_object
+    global reddit_id, reddit_object
     reddit_object = get_subreddit_threads(POST_ID)
-    redditid = id(reddit_object)
+    reddit_id = extract_id(reddit_object)
+    print_substep(f"Thread ID is {reddit_id}", style="bold blue")
     length, number_of_comments = save_text_to_mp3(reddit_object)
     length = math.ceil(length)
     get_screenshots_of_reddit_posts(reddit_object, number_of_comments)
@@ -64,22 +68,22 @@ def run_many(times) -> None:
     for x in range(1, times + 1):
         print_step(
             f'on the {x}{("th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th")[x % 10]} iteration of {times}'
-        )  # correct 1st 2nd 3rd 4th 5th....
+        )
         main()
         Popen("cls" if name == "nt" else "clear", shell=True).wait()
 
 
 def shutdown() -> NoReturn:
-    if "redditid" in globals():
+    if "reddit_id" in globals():
         print_markdown("## Clearing temp files")
-        cleanup(redditid)
+        cleanup(reddit_id)
 
     print("Exiting...")
     sys.exit()
 
 
 if __name__ == "__main__":
-    if sys.version_info.major != 3 or sys.version_info.minor not in [10, 11]:
+    if sys.version_info.major != 3 or sys.version_info.minor not in [10, 11, 12]:
         print(
             "Hey! Congratulations, you've made it so far (which is pretty rare with no Python 3.10). Unfortunately, this program only works on Python 3.10. Please install Python 3.10 and try again."
         )
@@ -122,6 +126,7 @@ if __name__ == "__main__":
     except Exception as err:
         config["settings"]["tts"]["tiktok_sessionid"] = "REDACTED"
         config["settings"]["tts"]["elevenlabs_api_key"] = "REDACTED"
+        config["settings"]["tts"]["openai_api_key"] = "REDACTED"
         print_step(
             f"Sorry, something went wrong with this version! Try again, and feel free to report this issue at GitHub or the Discord community.\n"
             f"Version: {__VERSION__} \n"
